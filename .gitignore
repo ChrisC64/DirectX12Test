@@ -1,0 +1,7 @@
+[Bb]uild
+[Dd]ebug
+*.pdb
+*.obj
+*.user
+x64
+.vs/*
