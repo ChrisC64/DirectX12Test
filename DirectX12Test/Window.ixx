@@ -157,7 +157,7 @@ namespace Application
 			break;
 			case WM_PAINT:
 			{
-				OnPaint();
+				onPaint();
 			}
 			break;
 			case WM_CLOSE:
@@ -169,7 +169,7 @@ namespace Application
 				}
 				break;
 			case WM_SIZE:
-				Resize();
+				resize();
 				break;
 			case WM_DESTROY:
 				PostQuitMessage(0);
@@ -235,7 +235,6 @@ namespace Application
 				int y = GET_Y_LPARAM(lparam);
 				auto dipX = PixelToDipsX(x);
 				auto dipY = PixelToDipsY(y);
-				std::cout << std::format("\nPixel Coords: {}, {} \n\tDIPS: {}, {}", x, y, dipX, dipY);
 				onMouseMove(PixelToDipsX(x), PixelToDipsY(y), static_cast<DWORD>(wparam));
 				break;
 			}
@@ -290,28 +289,16 @@ namespace Application
 		Microsoft::WRL::ComPtr<IDWriteFactory> m_pWriteFactory = nullptr;
 		Microsoft::WRL::ComPtr<IDXGIFactory> m_pDxgiFactory = nullptr;
 
-		//Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> m_pBrush = nullptr;
-		//Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> m_pStroke = nullptr;
-		//Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> m_pGreenBrush = nullptr;
-		D2D1_ELLIPSE	m_ellipse;
-		D2D1_ELLIPSE	m_userEllipse{ 0.0f, 0.0f };
 		D2D1_POINT_2F   m_mousePoint{ 0.0f, 0.0f };
 
 		// Manipulation stuff //
 		bool		m_bIsSkewed = false;
 		float		m_angles = 0.0f;
 		std::vector<UI::LSText> m_texts;
+		std::vector<UI::Widget*> m_widgets;
 
 		void calculateLayout()
 		{
-			if (m_pRenderTarget)
-			{
-				auto size = m_pRenderTarget->GetSize();
-				const float x = size.width / 2;
-				const float y = size.height / 2;
-				const float radius = std::min(x, y);
-				m_ellipse = D2D1::Ellipse(D2D1::Point2F(x, y), radius, radius);
-			}
 		}
 
 		void createD2D()
@@ -354,7 +341,7 @@ namespace Application
 			}
 		}
 
-		void OnPaint()
+		void onPaint()
 		{
 			auto hr = createGraphicsResources();
 			ThrowIfFailed(hr, "Failed to create graphic resources");
@@ -380,7 +367,7 @@ namespace Application
 			EndPaint(m_hwnd, &ps);
 		}
 
-		void Resize()
+		void resize()
 		{
 			if (m_pRenderTarget)
 			{
@@ -413,26 +400,28 @@ namespace Application
 
 		void onLButtonDown(float dipPixelX, float dipPixelY, [[maybe_unused]] DWORD flags)
 		{
-			std::cout << std::format("\nMouse L Button Down: {}, {}", dipPixelX, dipPixelY);
-			SetCapture(m_hwnd);
+			std::cout << std::format("\nMouse L Button Down: {}, {}\n", dipPixelX, dipPixelY);
+			//SetCapture(m_hwnd);
 			m_mousePoint = { dipPixelX, dipPixelY };
-			m_userEllipse.point = m_mousePoint;
-			m_userEllipse.radiusX = m_userEllipse.radiusY = 1.0f;
-			InvalidateRect(m_hwnd, NULL, FALSE);
+			//InvalidateRect(m_hwnd, NULL, FALSE);
+
+			for (auto& t : m_texts)
+			{
+				if (checkCollision(&t, { dipPixelX, dipPixelY }) )
+				{
+					t.onClick();
+				}
+			}
 		}
 
 		void onMouseMove(float dipPixelX, float dipPixelY, DWORD flags)
 		{
-			if (flags & MK_LBUTTON)
+			for (auto& t : m_texts)
 			{
-				const float width = (dipPixelX - m_mousePoint.x) / 2;
-				const float height = (dipPixelY - m_mousePoint.y) / 2;
-				const float x1 = m_mousePoint.x + width;
-				const float y1 = m_mousePoint.y + height;
-
-				m_userEllipse = D2D1::Ellipse(D2D1_POINT_2F(x1, y1), width, height);
-				std::cout << std::format("\nEllipse: Point: {}, {} Width/Height: {}, {}", x1, y1, width, height);
-				InvalidateRect(m_hwnd, NULL, FALSE);
+				if (checkCollision(&t, { dipPixelX, dipPixelY }))
+				{
+					t.onEnter(dipPixelX, dipPixelY);
+				}
 			}
 		}
 
@@ -456,6 +445,10 @@ namespace Application
 			{
 				return pWindow->handleMessage(hwnd, message, wparam, lparam);
 			}
+			else
+			{
+				return DefWindowProc(hwnd, message, wparam, lparam);
+			}
 		}
 		else
 		{
@@ -469,6 +462,5 @@ namespace Application
 				return DefWindowProc(hwnd, message, wparam, lparam);
 			}
 		}
-		return DefWindowProc(hwnd, message, wparam, lparam);
 	}
 }

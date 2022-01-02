@@ -6,10 +6,13 @@ module;
 #include <d2d1.h>
 #include <dwrite_3.h>
 #include <vector>
-
+#include <format>
+#include <iostream>
 #pragma comment(lib, "Dwrite")
 
 export module UI:Text;
+
+import :Widget;
 
 namespace UI
 {
@@ -21,7 +24,7 @@ namespace UI
 		}
 	}
 
-	export class LSText
+	export class LSText : public Widget
 	{
 	public:
 		LSText(std::wstring_view text, 
@@ -36,9 +39,18 @@ namespace UI
 			m_fontSize(fontSize),
 			m_weight(weight),
 			m_style(styles),
-			m_stretch(stretches),
-			m_boundRect(bounds)
+			m_stretch(stretches)
 		{
+			m_name = L"LS_Text";
+			m_bounds = { 
+				.left = static_cast<float>(bounds.left),
+				.top = static_cast<float>(bounds.top),
+				.right = static_cast<float>(bounds.right),
+				.bottom = static_cast<float>(bounds.bottom)
+			};
+			m_position.x = m_bounds.right - m_bounds.left;
+			m_position.y = m_bounds.bottom - m_bounds.top;
+
 			pWriteFactory->CreateTextFormat(m_fontType.c_str(), NULL, 
 				m_weight, m_style, m_stretch, m_fontSize, 
 				m_locale.c_str(), 
@@ -57,17 +69,17 @@ namespace UI
 			pRenderTarget->SetTransform(D2D1::Matrix3x2F::Identity());
 			// Rectangle border of draw bounds
 			D2D1_RECT_F rec{};
-			rec.left = m_boundRect.left;
-			rec.top = m_boundRect.top;
-			rec.right = m_boundRect.right;
-			rec.bottom = m_boundRect.bottom;
+			rec.left = m_bounds.left;
+			rec.top = m_bounds.top;
+			rec.right = m_bounds.right;
+			rec.bottom = m_bounds.bottom;
 			// Show textbox border and draw text
 			pRenderTarget->DrawRectangle(rec, m_pFill.Get());
 			pRenderTarget->FillRectangle(rec, m_pBorder.Get());
 			pRenderTarget->DrawTextW(m_text.c_str(),
 				m_text.size() - 1,
 				m_pTextFormat.Get(),
-				D2D1::RectF(m_boundRect.left, m_boundRect.top, m_boundRect.right, m_boundRect.bottom),
+				D2D1::RectF(m_bounds.left, m_bounds.top, m_bounds.right, m_bounds.bottom),
 				m_pStroke.Get()
 			);
 		}
@@ -79,7 +91,36 @@ namespace UI
 
 		RECT getBoundaries()
 		{
-			return m_boundRect;
+			return RECT{ static_cast<LONG>(m_bounds.left), 
+				static_cast<LONG>(m_bounds.top), 
+				static_cast<LONG>(m_bounds.right), 
+				static_cast<LONG>(m_bounds.bottom)
+			};
+		}
+
+		void onClick([[maybe_unused]] float x, [[maybe_unused]] float y)
+		{
+			std::wcout << L"onClick() called " << m_name << " ID: " << m_id << "\n";
+		}
+
+		void onClickRelease([[maybe_unused]] float x, [[maybe_unused]] float y)
+		{
+			std::wcout << L"onClickRelease() " << m_name << " ID: " << m_id << "\n";
+		}
+
+		void onEnter([[maybe_unused]] float x, [[maybe_unused]] float y)
+		{
+			std::wcout << L"Entered " << m_name << " ID: " << m_id << " at (" << x << ", " << y << ")\n";
+		}
+
+		void onExit([[maybe_unused]] float x, [[maybe_unused]] float y)
+		{
+			std::wcout << L"Exited " << m_name << " ID: " << m_id << " at (" << x << ", " << y << ")\n";
+		}
+
+		void onEvent([[maybe_unused]] WidgetEvent we)
+		{
+			std::wcout << L"An event was fired for " << m_name << " ID: " << m_id << "\n";
 		}
 
 	private:
@@ -94,7 +135,7 @@ namespace UI
 		DWRITE_FONT_WEIGHT m_weight;
 		DWRITE_FONT_STYLE m_style;
 		DWRITE_FONT_STRETCH m_stretch;
-		RECT m_boundRect = { 0, 0, 100, 100 };
+		//RECT m_boundRect = { 0, 0, 100, 100 };
 
 		void createBrushes(ID2D1RenderTarget* pRenderTarget)
 		{

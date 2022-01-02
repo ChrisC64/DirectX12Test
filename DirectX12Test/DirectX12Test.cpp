@@ -20,7 +20,9 @@ int main()
     window.initWIndow(800, 600, L"DX 12 Test");
 
     auto text = UI::LSText(L"Hello LS Text!", window.getWriteFactory());
+    text.m_id = 0;
     auto text2 = UI::LSText(L"Another Textbox appeared!!", window.getWriteFactory(), {100, 100, 200, 200});
+    text2.m_id = 1;
     window.addText(text);
     window.addText(text2);
 

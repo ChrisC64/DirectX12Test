@@ -33,5 +33,11 @@
     <ClCompile Include="Text.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Object.ixx">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="UIWidget.ixx">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
