@@ -90,10 +90,12 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <EnableModules>true</EnableModules>
+      <AdditionalIncludeDirectories>$(SolutionDir)Vendor;$(SolutionDir)Vendor\DirectX-Headers\include\directx;$(SolutionDir)Vendor\DirectX-Headers\include\dxguids;$(SolutionDir)Vendor\DirectX-Headers\include\wsl;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>dxgi.lib;d3d12.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -106,12 +108,14 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <EnableModules>true</EnableModules>
+      <AdditionalIncludeDirectories>$(SolutionDir)Vendor;$(SolutionDir)Vendor\DirectX-Headers\include\directx;$(SolutionDir)Vendor\DirectX-Headers\include\dxguids;$(SolutionDir)Vendor\DirectX-Headers\include\wsl;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>dxgi.lib;d3d12.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -122,10 +126,12 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <EnableModules>true</EnableModules>
+      <AdditionalIncludeDirectories>$(SolutionDir)Vendor;$(SolutionDir)Vendor\DirectX-Headers\include\directx;$(SolutionDir)Vendor\DirectX-Headers\include\dxguids;$(SolutionDir)Vendor\DirectX-Headers\include\wsl;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>dxgi.lib;d3d12.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <Manifest>
       <EnableDpiAwareness>true</EnableDpiAwareness>
@@ -141,19 +147,24 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <EnableModules>true</EnableModules>
+      <AdditionalIncludeDirectories>$(SolutionDir)Vendor;$(SolutionDir)Vendor\DirectX-Headers\include\directx;$(SolutionDir)Vendor\DirectX-Headers\include\dxguids;$(SolutionDir)Vendor\DirectX-Headers\include\wsl;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>dxgi.lib;d3d12.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Application.ixx" />
     <ClCompile Include="DirectX12Test.cpp" />
     <ClCompile Include="DX12Device.ixx" />
+    <ClCompile Include="LSDeviceDX12.cpp" />
     <ClCompile Include="Object.ixx" />
+    <ClCompile Include="QuadTree.ixx" />
+    <ClCompile Include="Shapes.ixx" />
     <ClCompile Include="Text.ixx" />
     <ClCompile Include="UI.ixx" />
     <ClCompile Include="UIWidget.ixx" />

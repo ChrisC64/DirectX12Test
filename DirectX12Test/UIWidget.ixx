@@ -1,5 +1,6 @@
 module;
 #include <functional>
+#include <d2d1.h>
 
 export module UI:Widget;
 
@@ -11,6 +12,7 @@ namespace UI
 	{
 		ENTER,
 		LEAVE,
+		HOVER,
 		CLICKED,
 		HOLD,
 		RELEASED
@@ -25,7 +27,6 @@ namespace UI
 	export struct WidgetArgs
 	{
 		Position CursorPos;
-		Box2D Bounds;
 	};
 
 	export class Widget : public AObject
@@ -35,22 +36,22 @@ namespace UI
 
 		virtual ~Widget() = default;
 
-		virtual void onClick([[maybe_unused]] float x, [[maybe_unused]] float y)
+		virtual void onClick()
 		{
 
 		}
 
-		virtual void onClickRelease([[maybe_unused]] float x, [[maybe_unused]] float y)
+		virtual void onClickRelease()
 		{
 
 		}
 
-		virtual void onEnter([[maybe_unused]] float x, [[maybe_unused]] float y)
+		virtual void onEnter()
 		{
 
 		}
 		
-		virtual void onExit([[maybe_unused]] float x, [[maybe_unused]] float y)
+		virtual void onExit()
 		{
 
 		}
@@ -60,5 +61,14 @@ namespace UI
 
 		}
 
+		virtual void onMouseMove([[maybe_unused]] float x, [[maybe_unused]] float y)
+		{
+
+		}
+
+		virtual void Render([[maybe_unused]] ID2D1RenderTarget* pRenderTarget)
+		{
+
+		}
 	};
 }

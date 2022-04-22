@@ -39,5 +39,14 @@
     <ClCompile Include="UIWidget.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Shapes.ixx">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="QuadTree.ixx">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="LSDeviceDX12.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

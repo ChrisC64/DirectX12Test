@@ -7,14 +7,14 @@ export module Object;
 
 export struct Position
 {
-	float x, y;
+	double x, y;
 };
 
 // All colliders are going to be boxes for now
 
 export struct Box2D
 {
-	float left, top, right, bottom;
+	double left, top, right, bottom;
 };
 
 export struct AObject

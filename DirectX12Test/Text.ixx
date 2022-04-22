@@ -59,7 +59,7 @@ namespace UI
 			m_pTextFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
 		}
 
-		void Render(ID2D1RenderTarget* pRenderTarget)
+		void Render(ID2D1RenderTarget* pRenderTarget) override
 		{
 			if (!pRenderTarget)
 				return;
@@ -69,17 +69,21 @@ namespace UI
 			pRenderTarget->SetTransform(D2D1::Matrix3x2F::Identity());
 			// Rectangle border of draw bounds
 			D2D1_RECT_F rec{};
-			rec.left = m_bounds.left;
-			rec.top = m_bounds.top;
-			rec.right = m_bounds.right;
-			rec.bottom = m_bounds.bottom;
+			rec.left = static_cast<float>(m_bounds.left);
+			rec.top =    static_cast<float>(m_bounds.top);
+			rec.right =  static_cast<float>(m_bounds.right);
+			rec.bottom = static_cast<float>(m_bounds.bottom);
 			// Show textbox border and draw text
 			pRenderTarget->DrawRectangle(rec, m_pFill.Get());
 			pRenderTarget->FillRectangle(rec, m_pBorder.Get());
 			pRenderTarget->DrawTextW(m_text.c_str(),
-				m_text.size() - 1,
+				static_cast<uint32_t>(m_text.size() - 1),
 				m_pTextFormat.Get(),
-				D2D1::RectF(m_bounds.left, m_bounds.top, m_bounds.right, m_bounds.bottom),
+				D2D1::RectF(
+					static_cast<float>(m_bounds.left), 
+					static_cast<float>(m_bounds.top), 
+					static_cast<float>(m_bounds.right), 
+					static_cast<float>(m_bounds.bottom)),
 				m_pStroke.Get()
 			);
 		}
@@ -98,29 +102,34 @@ namespace UI
 			};
 		}
 
-		void onClick([[maybe_unused]] float x, [[maybe_unused]] float y)
+		void onClick() override
 		{
-			std::wcout << L"onClick() called " << m_name << " ID: " << m_id << "\n";
+			std::wcout << L"onClick() called \n";
 		}
 
-		void onClickRelease([[maybe_unused]] float x, [[maybe_unused]] float y)
+		void onClickRelease() override
 		{
 			std::wcout << L"onClickRelease() " << m_name << " ID: " << m_id << "\n";
 		}
 
-		void onEnter([[maybe_unused]] float x, [[maybe_unused]] float y)
+		void onEnter() override
 		{
-			std::wcout << L"Entered " << m_name << " ID: " << m_id << " at (" << x << ", " << y << ")\n";
+			std::wcout << L"Entered " << m_name << " ID: " << m_id << "\n";
 		}
 
-		void onExit([[maybe_unused]] float x, [[maybe_unused]] float y)
+		void onExit() override
 		{
-			std::wcout << L"Exited " << m_name << " ID: " << m_id << " at (" << x << ", " << y << ")\n";
+			std::wcout << L"Exited " << m_name << " ID: " << m_id << "\n";
 		}
 
-		void onEvent([[maybe_unused]] WidgetEvent we)
+		void onEvent([[maybe_unused]] WidgetEvent we, [[maybe_unused]] WidgetArgs wArgs) override
 		{
 			std::wcout << L"An event was fired for " << m_name << " ID: " << m_id << "\n";
+		}
+
+		void onMouseMove([[maybe_unused]] float x, [[maybe_unused]] float y)
+		{
+			std::wcout << L"Mouse move: " << x << ", " << y << "\n";
 		}
 
 	private:
@@ -135,7 +144,6 @@ namespace UI
 		DWRITE_FONT_WEIGHT m_weight;
 		DWRITE_FONT_STYLE m_style;
 		DWRITE_FONT_STRETCH m_stretch;
-		//RECT m_boundRect = { 0, 0, 100, 100 };
 
 		void createBrushes(ID2D1RenderTarget* pRenderTarget)
 		{

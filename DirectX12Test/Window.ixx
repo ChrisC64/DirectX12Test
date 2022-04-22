@@ -2,6 +2,7 @@ module;
 
 #include <cstdint>
 #include <string_view>
+#include <functional>
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
@@ -28,8 +29,8 @@ module;
 #endif
 
 export module Window;
-
 import UI;
+export import DX12Device;
 
 namespace Application
 {
@@ -63,6 +64,9 @@ namespace Application
 			m_pFactory = other.m_pFactory;
 			m_pRenderTarget = other.m_pRenderTarget;
 			m_title = other.m_title;
+			m_onLMBDown = other.m_onLMBDown;
+			m_onLMBUp = other.m_onLMBUp;
+			m_onMouseMove = other.m_onMouseMove;
 			return *this;
 		}
 		LSWindow& operator=(LSWindow&& other)
@@ -78,6 +82,9 @@ namespace Application
 			m_pFactory = other.m_pFactory;
 			m_pRenderTarget = other.m_pRenderTarget;
 			m_title = std::move(other.m_title);
+			m_onLMBDown = other.m_onLMBDown;
+			m_onLMBUp = other.m_onLMBUp;
+			m_onMouseMove = other.m_onMouseMove;
 			return *this;
 		}
 
@@ -91,11 +98,16 @@ namespace Application
 		{
 			while (!m_bIsClosing)
 			{
-				if (PeekMessage(&m_msg, NULL, 0, 0, PM_REMOVE))
-				{
-					TranslateMessage(&m_msg);
-					DispatchMessage(&m_msg);
-				}
+				poll();
+			}
+		}
+
+		void poll()
+		{
+			if (PeekMessage(&m_msg, NULL, 0, 0, PM_REMOVE))
+			{
+				TranslateMessage(&m_msg);
+				DispatchMessage(&m_msg);
 			}
 		}
 
@@ -145,6 +157,11 @@ namespace Application
 			m_bIsClosing = true;
 		}
 
+		bool isClosing()
+		{
+			return m_bIsClosing;
+		}
+
 		LRESULT handleMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam)
 		{
 			switch (message)
@@ -152,12 +169,14 @@ namespace Application
 			case WM_CREATE:
 			{
 				createD2D();
+				createD3D(hwnd);
 				findDPIScale(hwnd);
 			}
 			break;
 			case WM_PAINT:
 			{
-				onPaint();
+				onPaint3D();
+				onPaint2D();
 			}
 			break;
 			case WM_CLOSE:
@@ -220,7 +239,7 @@ namespace Application
 				break;
 			}
 			case(WM_LBUTTONUP):
-				onLButtonUp();
+				onLButtonUp(PixelToDipsX(GET_X_LPARAM(lparam)), PixelToDipsY(GET_Y_LPARAM(lparam)), static_cast<DWORD>(wparam));
 				break;
 			case(WM_MBUTTONUP):
 				break;
@@ -233,8 +252,6 @@ namespace Application
 			{
 				int x = GET_X_LPARAM(lparam);
 				int y = GET_Y_LPARAM(lparam);
-				auto dipX = PixelToDipsX(x);
-				auto dipY = PixelToDipsY(y);
 				onMouseMove(PixelToDipsX(x), PixelToDipsY(y), static_cast<DWORD>(wparam));
 				break;
 			}
@@ -266,10 +283,109 @@ namespace Application
 		{
 			m_texts.emplace_back(text);
 		}
+		
+		void addWidget(UI::Widget* widget)
+		{
+			if (!widget)
+				return;
+			m_widgets.emplace_back(widget);
+		}
+
+		void onPaint2D()
+		{
+			auto hr = createGraphicsResources();
+			ThrowIfFailed(hr, "Failed to create graphic resources");
+
+			PAINTSTRUCT ps;
+			BeginPaint(m_hwnd, &ps);
+
+			m_pRenderTarget->BeginDraw();
+			m_pRenderTarget->Clear(D2D1::ColorF(D2D1::ColorF::SkyBlue));
+
+			for (auto&& text : m_texts)
+			{
+				text.Render(m_pRenderTarget.Get());
+			}
+
+			for (auto&& widget : m_widgets)
+			{
+				widget->Render(m_pRenderTarget.Get());
+			}
+
+			hr = m_pRenderTarget->EndDraw();
+
+			if (FAILED(hr) || hr == D2DERR_RECREATE_TARGET)
+			{
+				disacardGraphicsResources();
+			}
+
+			EndPaint(m_hwnd, &ps);
+		}
+
+		void onPaint3D()
+		{
+			m_device3d.Render();
+		}
+
+		void enableCapture()
+		{
+			SetCapture(m_hwnd);
+		}
+
+		void disableCapture()
+		{
+			ReleaseCapture();
+		}
+
+		// GETTERS // 
+		uint32_t Width() const
+		{
+			return m_width;
+		}
+		
+		uint32_t Height() const
+		{
+			return m_height;
+		}
+
+		std::wstring_view Title() const
+		{
+			return m_title;
+		}
 
 		IDWriteFactory* getWriteFactory()
 		{
 			return m_pWriteFactory.Get();
+		}
+
+		ID2D1RenderTarget* GetRenderTarget()
+		{
+			return m_pRenderTarget.Get();
+		}
+
+		void RegisterLMBDown(std::function<void(float x, float y, DWORD flags)>&& cb)
+		{
+			m_onLMBDown = cb;
+		}
+		
+		void RegisterLMBUp(std::function<void(float x, float y, DWORD flags)>&& cb)
+		{
+			m_onLMBUp = cb;
+		}
+		
+		void RegisterMouseMove(std::function<void(float x, float y, DWORD flags)>&& cb)
+		{
+			m_onMouseMove = cb;
+		}
+
+		D2D1_POINT_2F getNormCoords(uint32_t x, uint32_t y)
+		{
+			return D2D1::Point2F( static_cast<float>(x) / m_width, static_cast<float>(y) / m_height);
+		}
+
+		HWND getHandle()
+		{
+			return m_hwnd;
 		}
 
 	private:
@@ -277,30 +393,30 @@ namespace Application
 		uint32_t	m_height;
 		LPCWSTR		m_title;
 		HINSTANCE	m_hInstance{};
-		HWND		m_hwnd;
-		bool		m_bIsClosing = false;
-		MSG			m_msg;
-		UINT		m_dpi;
-		const UINT HIGH_BIT = 0x8000;
 
 		//D2D Stuff //
 		Microsoft::WRL::ComPtr<ID2D1Factory> m_pFactory = nullptr;
 		Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> m_pRenderTarget = nullptr;
 		Microsoft::WRL::ComPtr<IDWriteFactory> m_pWriteFactory = nullptr;
 		Microsoft::WRL::ComPtr<IDXGIFactory> m_pDxgiFactory = nullptr;
+		
+		std::function<void(float dipPixelX, float dipPixelY, DWORD flags)> m_onLMBDown;
+		std::function<void(float dipPixelX, float dipPixelY, DWORD flags)> m_onLMBUp;
+		std::function<void(float dipPixelX, float dipPixelY, DWORD flags)> m_onMouseMove;
+		HWND		m_hwnd;
+		MSG			m_msg;
+		UINT		m_dpi;
+		bool		m_bIsClosing = false;
 
 		D2D1_POINT_2F   m_mousePoint{ 0.0f, 0.0f };
+		const UINT HIGH_BIT = 0x8000;
 
 		// Manipulation stuff //
 		bool		m_bIsSkewed = false;
 		float		m_angles = 0.0f;
 		std::vector<UI::LSText> m_texts;
 		std::vector<UI::Widget*> m_widgets;
-
-		void calculateLayout()
-		{
-		}
-
+		LS::LSDevice m_device3d;
 		void createD2D()
 		{
 			auto hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, m_pFactory.ReleaseAndGetAddressOf());
@@ -308,6 +424,14 @@ namespace Application
 			hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(m_pWriteFactory), reinterpret_cast<IUnknown**>(m_pWriteFactory.ReleaseAndGetAddressOf()));
 			ThrowIfFailed(hr, "Failed to create write factory");
 			ThrowIfFailed(hr, "Failed to create text format!");
+		}
+
+		void createD3D(HWND hwnd)
+		{
+			if (!m_device3d.CreateDevice(reinterpret_cast<void*>(hwnd)))
+			{
+				throw std::runtime_error("Failed to create the d3d device\n");
+			}
 		}
 
 		HRESULT createGraphicsResources()
@@ -325,7 +449,6 @@ namespace Application
 					&m_pRenderTarget);
 
 				ThrowIfFailed(hr, "Failed to create render target for HWND");
-				calculateLayout();
 				return hr;
 			}
 			return S_OK;
@@ -341,32 +464,6 @@ namespace Application
 			}
 		}
 
-		void onPaint()
-		{
-			auto hr = createGraphicsResources();
-			ThrowIfFailed(hr, "Failed to create graphic resources");
-
-			PAINTSTRUCT ps;
-			BeginPaint(m_hwnd, &ps);
-
-			m_pRenderTarget->BeginDraw();
-			m_pRenderTarget->Clear(D2D1::ColorF(D2D1::ColorF::SkyBlue));
-
-			for (auto& text : m_texts)
-			{
-				text.Render(m_pRenderTarget.Get());
-			}
-
-			hr = m_pRenderTarget->EndDraw();
-
-			if (FAILED(hr) || hr == D2DERR_RECREATE_TARGET)
-			{
-				disacardGraphicsResources();
-			}
-
-			EndPaint(m_hwnd, &ps);
-		}
-
 		void resize()
 		{
 			if (m_pRenderTarget)
@@ -376,7 +473,6 @@ namespace Application
 
 				auto size = D2D1::SizeU(rc.right, rc.bottom);
 				m_pRenderTarget->Resize(size);
-				calculateLayout();
 				InvalidateRect(m_hwnd, NULL, FALSE);
 			}
 		}
@@ -398,37 +494,34 @@ namespace Application
 			return static_cast<float>(y) / (m_dpi / 96.0f);
 		}
 
-		void onLButtonDown(float dipPixelX, float dipPixelY, [[maybe_unused]] DWORD flags)
+		void onLButtonDown(float dipPixelX, float dipPixelY, DWORD flags)
 		{
-			std::cout << std::format("\nMouse L Button Down: {}, {}\n", dipPixelX, dipPixelY);
-			//SetCapture(m_hwnd);
 			m_mousePoint = { dipPixelX, dipPixelY };
-			//InvalidateRect(m_hwnd, NULL, FALSE);
 
-			for (auto& t : m_texts)
+			if (m_onLMBDown)
 			{
-				if (checkCollision(&t, { dipPixelX, dipPixelY }) )
-				{
-					t.onClick();
-				}
+				m_onLMBDown(dipPixelX, dipPixelY, flags);
 			}
 		}
 
 		void onMouseMove(float dipPixelX, float dipPixelY, DWORD flags)
 		{
-			for (auto& t : m_texts)
+			m_mousePoint = { dipPixelX, dipPixelY };
+
+			if (m_onMouseMove)
 			{
-				if (checkCollision(&t, { dipPixelX, dipPixelY }))
-				{
-					t.onEnter(dipPixelX, dipPixelY);
-				}
+				m_onMouseMove(dipPixelX, dipPixelY, flags);
 			}
 		}
 
-		void onLButtonUp()
+		void onLButtonUp(float dipPixelX, float dipPixelY, [[maybe_unused]] DWORD flags)
 		{
-			std::cout << "\nMouse released!\n";
-			ReleaseCapture();
+			m_mousePoint = { dipPixelX, dipPixelY };
+
+			if (m_onLMBUp)
+			{
+				m_onLMBUp(dipPixelX, dipPixelY, flags);
+			}
 		}
 	};
 
