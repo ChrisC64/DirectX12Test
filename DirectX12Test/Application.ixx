@@ -49,6 +49,27 @@ namespace Application
 
 			m_window = std::move(window);
 		}
+		
+		App(uint32_t x, uint32_t y, std::wstring_view title) : m_window(), m_quadTree(Data::Box{ .minPoint = Data::Point{.x = 0.0f, .y = 0.0f},
+			.maxPoint = Data::Point{.x = static_cast<float>(x), .y = static_cast<float>(y)}}, 10)
+		{
+			using namespace std::placeholders;
+			m_window.initWindow(x, y, title);
+			m_window.RegisterLMBDown([=]([[maybe_unused]] float x, [[maybe_unused]] float y, [[maybe_unused]] DWORD flags)
+				{
+					OnLMBDown(x, y, flags);
+				});
+
+			m_window.RegisterLMBUp([=]([[maybe_unused]] float x, [[maybe_unused]] float y, [[maybe_unused]] DWORD flags)
+				{
+					OnLMBUp(x, y, flags);
+				});
+
+			m_window.RegisterMouseMove([=]([[maybe_unused]] float x, [[maybe_unused]] float y, [[maybe_unused]] DWORD flags)
+				{
+					OnMouseMove(x, y, flags);
+				});
+		}
 
 		~App()
 		{

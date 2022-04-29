@@ -17,7 +17,7 @@ namespace LS
 	public:
 		LSDevice();
 		virtual ~LSDevice();
-		bool CreateDevice(void* handle);
+		bool CreateDevice(void* handle, uint32_t x = 0, uint32_t y = 0);
 		void CheckFeatures(std::string& s);
 		void CleanupDevice();
 		void Render();

@@ -54,32 +54,32 @@ namespace LS
 	{
 	private:
 		static constexpr uint32_t								FRAME_COUNT = 3;
-		FrameContext											m_frameContext[FRAME_COUNT] = {};
+		std::array<FrameContext, FRAME_COUNT>					m_frameContext = {};
 		uint32_t												m_frameIndex;
 		// pipeline objects
 		ComPtr<ID3D12Device4>									m_pd3dDevice;
-		ComPtr<ID3D12DescriptorHeap>							m_pd3dRtvDescHeap;
-		ComPtr<ID3D12DescriptorHeap>							m_pd3dSrvDescHeap;
-		ComPtr<ID3D12CommandQueue>								m_pd3dCommandQueue;
-		ComPtr<IDXGISwapChain4>									m_pSwapChain = NULL;
-		ComPtr<ID3D12GraphicsCommandList>						m_pd3dCommandList;
-		HANDLE													m_hSwapChainWaitableObject = NULL;
+		ComPtr<ID3D12DescriptorHeap>							m_pRtvDescHeap;
+		ComPtr<ID3D12DescriptorHeap>							m_pSrvDescHeap;
+		ComPtr<ID3D12CommandQueue>								m_pCommandQueue;
+		ComPtr<IDXGISwapChain4>									m_pSwapChain = nullptr;
+		ComPtr<ID3D12GraphicsCommandList>						m_pCommandList;
+		HANDLE													m_hSwapChainWaitableObject = nullptr;
 		std::array<ComPtr<ID3D12Resource>, FRAME_COUNT>			m_mainRenderTargetResource = {};
 		D3D12_CPU_DESCRIPTOR_HANDLE								m_mainRenderTargetDescriptor[FRAME_COUNT] = {};
 
 		// Synchronization Objects
 		ComPtr<ID3D12Fence>										m_fence;
-		HANDLE													m_fenceEvent = NULL;
+		HANDLE													m_fenceEvent = nullptr;
 		uint64_t												m_fenceLastSignaledValue = 0;
 		UINT													m_rtvDescriptorSize = 0;
 	public:
 
 		// Creates the device and pipeline 
-		bool CreateDevice(HWND hwnd)
+		bool CreateDevice(HWND hwnd, uint32_t x, uint32_t y)
 		{
 			// [DEBUG] Enable debug interface
 #ifdef _DEBUG
-			ID3D12Debug* pdx12Debug = NULL;
+			ComPtr<ID3D12Debug> pdx12Debug = nullptr;
 			if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&pdx12Debug))))
 				pdx12Debug->EnableDebugLayer();
 #endif
@@ -97,15 +97,13 @@ namespace LS
 
 			// [DEBUG] Setup debug interface to break on any warnings/errors
 #ifdef _DEBUG
-			if (pdx12Debug != NULL)
+			if (pdx12Debug)
 			{
-				ID3D12InfoQueue* pInfoQueue = NULL;
+				ComPtr<ID3D12InfoQueue> pInfoQueue = nullptr;
 				m_pd3dDevice->QueryInterface(IID_PPV_ARGS(&pInfoQueue));
 				pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, true);
 				pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, true);
 				pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, true);
-				pInfoQueue->Release();
-				pdx12Debug->Release();
 			}
 #endif
 			// Create command queue
@@ -114,15 +112,23 @@ namespace LS
 				desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 				desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
 				desc.NodeMask = 1;
-				if (m_pd3dDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(&m_pd3dCommandQueue)) != S_OK)
+
+				if (m_pd3dDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(&m_pCommandQueue)) != S_OK)
 					return false;
 			}
-
+			bool useRect = x == 0 || y == 0;
+			long width{}, height{};
+			RECT rect;
+			if (useRect && GetWindowRect(hwnd, &rect))
+			{
+				width = rect.right - rect.left;
+				height = rect.bottom - rect.top;
+			}
 			// Setup swap chain
 			DXGI_SWAP_CHAIN_DESC1 swapchainDesc1{};
 			swapchainDesc1.BufferCount = FRAME_COUNT;
-			swapchainDesc1.Width = 0;
-			swapchainDesc1.Height = 0;
+			swapchainDesc1.Width = useRect ? static_cast<UINT>(width) : x;
+			swapchainDesc1.Height = useRect ? static_cast<UINT>(height) : y;
 			swapchainDesc1.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 			swapchainDesc1.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 			swapchainDesc1.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
@@ -132,22 +138,19 @@ namespace LS
 			swapchainDesc1.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
 			swapchainDesc1.Scaling = DXGI_SCALING_STRETCH;
 			swapchainDesc1.Stereo = FALSE;
-
+			// Since we are using an HWND (Win32) system, we can create the swapchain for HWND 
 			{
-				//IDXGIFactory4* dxgiFactory = NULL;
 				ComPtr<IDXGISwapChain1> swapChain1 = nullptr;
-				//if (CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory)) != S_OK)
-					//return false;
-				if (factory->CreateSwapChainForHwnd(m_pd3dCommandQueue.Get(), hwnd, &swapchainDesc1, nullptr, nullptr, &swapChain1) != S_OK)
+				if (factory->CreateSwapChainForHwnd(m_pCommandQueue.Get(), hwnd, &swapchainDesc1, nullptr, nullptr, &swapChain1) != S_OK)
 					return false;
 				if (swapChain1.As(&m_pSwapChain) != S_OK)
 					return false;
 
+				// Helper function that displays our display's resolution and refresh rates and other information 
 				LogAdapters(factory.Get());
 				// Don't allot ALT+ENTER fullscreen
 				factory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
-				//swapChain1->Release();
-				//dxgiFactory->Release();
+
 				m_pSwapChain->SetMaximumFrameLatency(FRAME_COUNT);
 				m_frameIndex = m_pSwapChain->GetCurrentBackBufferIndex();
 				m_hSwapChainWaitableObject = m_pSwapChain->GetFrameLatencyWaitableObject();
@@ -163,17 +166,10 @@ namespace LS
 				desc.NumDescriptors = FRAME_COUNT;
 				desc.NodeMask = 1;
 
-				if (m_pd3dDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_pd3dRtvDescHeap)) != S_OK)
+				if (m_pd3dDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_pRtvDescHeap)) != S_OK)
 					return false;
 				// Handles have a size that varies by GPU, so we have to ask for the Handle size on the GPU before processing
 				m_rtvDescriptorSize = m_pd3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
-				// The handle can now be used to help use build our RTVs - one RTV per frame/back buffer
-				D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = m_pd3dRtvDescHeap->GetCPUDescriptorHandleForHeapStart();
-				for (UINT i = 0; i < FRAME_COUNT; i++)
-				{
-					m_mainRenderTargetDescriptor[i] = rtvHandle;
-					rtvHandle.ptr += m_rtvDescriptorSize;
-				}
 			}
 			// a descriptor heap for the Constant Buffer View/Shader Resource View/Unordered Access View types (this one is just the SRV)
 			{
@@ -182,19 +178,8 @@ namespace LS
 				desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 				desc.NumDescriptors = 1;
 
-				if (m_pd3dDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_pd3dSrvDescHeap)) != S_OK)
+				if (m_pd3dDevice->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&m_pSrvDescHeap)) != S_OK)
 					return false;
-			}
-
-			// Create Command Allocator for each frame
-			for (UINT i = 0; i < FRAME_COUNT; i++)
-				if (m_pd3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_frameContext[i].CommandAllocator)) != S_OK)
-					return false;
-
-			uint32_t i = 0;
-			for (auto m : m_frameContext)
-			{
-				m.FenceValue = i++;
 			}
 
 			CreateRenderTarget();
@@ -207,16 +192,45 @@ namespace LS
 			// Creating the command list using the command allocator
 			// CreateCommandList1 can be used to avoid the unnecessary Create and Closing of the Command List that generally is done the first time we create it. This means
 			// we don't need to create a list with an allocator just to close it. 
-			if (m_pd3dDevice->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&m_pd3dCommandList)) != S_OK)
+			if (m_pd3dDevice->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&m_pCommandList)) != S_OK)
 				return false;
 
-			// A fence is used for synchronization
-			if (m_pd3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)) != S_OK)
-				return false;
+			{
+				// A fence is used for synchronization
+				if (m_pd3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)) != S_OK)
+					return false;
 
-			m_fenceEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-			if (m_fenceEvent == NULL)
-				return false;
+				// Update the fence value, from startup, this should be 0, and thus the next frame we'll be creating will be the first frame (back buffer, as 0 is currently in front)
+				m_frameContext[FrameIndex()].FenceValue++;
+
+				m_fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+				if (m_fenceEvent == nullptr)
+				{
+					ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
+				}
+			}
+
+			return true;
+		}
+
+		constexpr UINT FrameIndex()
+		{
+			return m_frameIndex == 0 ? 0 : m_frameIndex % FRAME_COUNT;
+		}
+
+		// Waits for work on the GPU to finish before moving on to the next frame
+		void WaitForGpu()
+		{
+			FrameContext* frameCon = &m_frameContext[FrameIndex()];
+
+			// Signals the GPU the next upcoming fence value
+			ThrowIfFailed(m_pCommandQueue->Signal(m_fence.Get(), frameCon->FenceValue));
+
+			// Wait for the fence to be processes
+			ThrowIfFailed(m_fence->SetEventOnCompletion(frameCon->FenceValue, m_fenceEvent));
+			WaitForSingleObjectEx(m_fenceEvent, INFINITE, FALSE);
+			// Increment value to the next frame
+			frameCon->FenceValue++;
 		}
 
 		void GetHardwareAdapter(
@@ -286,10 +300,15 @@ namespace LS
 
 		void CreateRenderTarget()
 		{
+			// The handle can now be used to help use build our RTVs - one RTV per frame/back buffer
+			CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRtvDescHeap->GetCPUDescriptorHandleForHeapStart());
 			for (UINT i = 0; i < FRAME_COUNT; i++)
 			{
-				m_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&m_mainRenderTargetResource[i]));
-				m_pd3dDevice->CreateRenderTargetView(m_mainRenderTargetResource[i].Get(), NULL, m_mainRenderTargetDescriptor[i]);
+				ThrowIfFailed(m_pSwapChain->GetBuffer(i, IID_PPV_ARGS(&m_mainRenderTargetResource[i])));
+				m_pd3dDevice->CreateRenderTargetView(m_mainRenderTargetResource[i].Get(), nullptr, rtvHandle);
+				rtvHandle.Offset(1, m_rtvDescriptorSize);
+				m_mainRenderTargetDescriptor[i] = rtvHandle;
+				ThrowIfFailed(m_pd3dDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_frameContext[i].CommandAllocator)));
 			}
 		}
 
@@ -371,9 +390,66 @@ namespace LS
 			std::cout << "D3D Render function called!\n";
 			// Populate the command list
 			// This means record all commands we need to render the scene (clearing for now)
+			PopulateCommandList();
 			// Execut the command list
+			ID3D12CommandList* ppCommandLists[] = { m_pCommandList.Get() };
+			m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 			// Present the frame from the swapchain
+			ThrowIfFailed(m_pSwapChain->Present(1, 0));
 			// Wait for GPU work to finish before proceeding
+			MoveToNextFrame();
+		}
+
+		void PopulateCommandList()
+		{
+			FrameContext* frameCon = &m_frameContext[FrameIndex()];
+			ThrowIfFailed(frameCon->CommandAllocator->Reset());
+
+			// Taken from ImGui example
+			/*D3D12_RESOURCE_BARRIER barrier = {};
+			barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+			barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+			barrier.Transition.pResource = m_mainRenderTargetResource[backbufferIndex].Get();
+			barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+			barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
+			barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;*/
+
+			ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator, nullptr));
+
+			auto backbufferIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+			//m_pCommandList->ResourceBarrier(1, &barrier);
+			auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_mainRenderTargetResource[backbufferIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+			m_pCommandList->ResourceBarrier(1, &barrier);
+
+			CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRtvDescHeap->GetCPUDescriptorHandleForHeapStart(), m_frameIndex, m_rtvDescriptorSize);
+			m_pCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+
+			const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
+			m_pCommandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+
+			// Indicate that the back buffer will now be used to present.
+			auto barrier2 = CD3DX12_RESOURCE_BARRIER::Transition(m_mainRenderTargetResource[backbufferIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+			m_pCommandList->ResourceBarrier(1, &barrier2);
+
+			ThrowIfFailed(m_pCommandList->Close());
+		}
+
+		void MoveToNextFrame()
+		{
+			// Get frame context and send to the command queu our fence value 
+			auto frameCon = &m_frameContext[m_frameIndex];
+			ThrowIfFailed(m_pCommandQueue->Signal(m_fence.Get(), frameCon->FenceValue));
+
+			// Update frame index
+			m_frameIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+
+			if (m_fence->GetCompletedValue() < frameCon->FenceValue)
+			{
+				ThrowIfFailed(m_fence->SetEventOnCompletion(frameCon->FenceValue, m_fenceEvent));
+				WaitForSingleObjectEx(m_fenceEvent, INFINITE, FALSE);
+			}
+
+			m_frameContext[m_frameIndex].FenceValue = frameCon->FenceValue + 1;
 		}
 	};
 
@@ -386,9 +462,9 @@ namespace LS
 
 	}
 
-	bool LSDevice::CreateDevice(void* handle)
+	bool LSDevice::CreateDevice(void* handle, uint32_t x, uint32_t y)
 	{
-		return m_pImpl->CreateDevice(reinterpret_cast<HWND>(handle));
+		return m_pImpl->CreateDevice(reinterpret_cast<HWND>(handle), x, y);
 	}
 
 	void LSDevice::CheckFeatures(std::string& s)

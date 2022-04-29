@@ -49,7 +49,7 @@ namespace Application
 	public:
 		LSWindow() = default;
 		LSWindow(LSWindow&) = default;
-		LSWindow(LSWindow&&) = default;
+		LSWindow(LSWindow&&) = default;	
 
 		LSWindow& operator=(const LSWindow& other)
 		{
@@ -111,7 +111,7 @@ namespace Application
 			}
 		}
 
-		void initWIndow(uint32_t width, uint32_t height, std::wstring_view title)
+		void initWindow(uint32_t width, uint32_t height, std::wstring_view title)
 		{
 			m_width = width;
 			m_height = height;
@@ -428,7 +428,7 @@ namespace Application
 
 		void createD3D(HWND hwnd)
 		{
-			if (!m_device3d.CreateDevice(reinterpret_cast<void*>(hwnd)))
+			if (!m_device3d.CreateDevice(reinterpret_cast<void*>(hwnd), m_width, m_height))
 			{
 				throw std::runtime_error("Failed to create the d3d device\n");
 			}
