@@ -2,19 +2,20 @@ import DX12Device;
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <iostream>
-#include <memory>
+//#include <memory>
 #include <d3d12.h>
 #include <dxgi1_6.h>
 #include <cstdint>
-#include <wrl/client.h>
 #include <array>
 #include <vector>
-#include <string>
+//#include <string>
 #include <algorithm>
 #include <ranges>
-#include <d3d12.h>
+#include <wrl/client.h>
 #include "DirectX-Headers/include/directx/d3dx12.h"
 #include <d3dcompiler.h>
+
+#pragma comment(lib, "dxguid.lib")
 
 inline std::string HrToString(HRESULT hr)
 {
@@ -40,6 +41,59 @@ inline void ThrowIfFailed(HRESULT hr)
 	{
 		throw HrException(hr);
 	}
+}
+
+inline Microsoft::WRL::ComPtr<ID3D12Resource> CreateDefaultBuffer(
+	ID3D12Device* device,
+	ID3D12GraphicsCommandList* cmdList,
+	const void* initData,
+	uint64_t byteSize,
+	Microsoft::WRL::ComPtr<ID3D12Resource>& uploadBuffer)
+{
+	Microsoft::WRL::ComPtr<ID3D12Resource> defaultBuffer;
+
+	auto heapDefault = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	auto resourceDesc = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
+	// Creat Default Buffer
+	ThrowIfFailed(device->CreateCommittedResource(
+		&heapDefault,
+		D3D12_HEAP_FLAG_NONE,
+		&resourceDesc,
+		D3D12_RESOURCE_STATE_COMMON,
+		nullptr,
+		IID_PPV_ARGS(defaultBuffer.GetAddressOf())
+	));
+
+	// Upload type is needed to get the data onto the GPU
+	auto heapUpload = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+
+	ThrowIfFailed(device->CreateCommittedResource(
+		&heapUpload,
+		D3D12_HEAP_FLAG_NONE,
+		&resourceDesc,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(uploadBuffer.GetAddressOf())
+	));
+
+	// Create subresource data to copy into the default barrier
+	D3D12_SUBRESOURCE_DATA subresourceData{};
+	subresourceData.pData = initData;
+	subresourceData.RowPitch = byteSize;
+	subresourceData.SlicePitch = subresourceData.RowPitch;
+
+
+	auto defaultBarrier = CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
+	cmdList->ResourceBarrier(1,
+		&defaultBarrier);
+
+	UpdateSubresources<1>(cmdList, defaultBuffer.Get(), uploadBuffer.Get(), 0, 0, 1, &subresourceData);
+
+	auto defaultBarrier2 = CD3DX12_RESOURCE_BARRIER::Transition(defaultBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_GENERIC_READ);
+	cmdList->ResourceBarrier(1,
+		&defaultBarrier2);
+
+	return defaultBuffer;
 }
 
 namespace LS
@@ -272,26 +326,31 @@ namespace LS
 
 				const UINT vertexBufferSize = sizeof(triangleVertices);
 
-				// Note: using upload heaps to transfer static data like vert buffers is not 
-				// recommended. Every time the GPU needs it, the upload heap will be marshalled 
-				// over. Please read up on Default Heap usage. An upload heap is used here for 
-				// code simplicity and because there are very few verts to actually transfer.
-				CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
-				auto buffer = CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize);
-				ThrowIfFailed(m_pDevice->CreateCommittedResource(
-					&heapProps,
-					D3D12_HEAP_FLAG_NONE,
-					&buffer,
-					D3D12_RESOURCE_STATE_GENERIC_READ,
-					nullptr,
-					IID_PPV_ARGS(&m_vertexBuffer)));
+				// NOTE:
+				// In order to use default upload, we need to construct an upload buffer along with it.
+				// Default usage data cannot be written to by the CPU, so we need a upload/default of
+				// our vertex buffer resource where we create one upload descriptor and default descriptor
+				// for our scene here. We write to the GPU with our upload type and then use the default
+				// buffer. 
+				//CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
+				//auto buffer = CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize);
+				//ThrowIfFailed(m_pDevice->CreateCommittedResource(
+				//	&heapProps,
+				//	D3D12_HEAP_FLAG_NONE,
+				//	&buffer,
+				//	D3D12_RESOURCE_STATE_GENERIC_READ,
+				//	nullptr,
+				//	IID_PPV_ARGS(&m_vertexBuffer)));
 
-				// Copy the triangle data to the vertex buffer.
-				UINT8* pVertexDataBegin;
-				CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
-				ThrowIfFailed(m_vertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
-				memcpy(pVertexDataBegin, triangleVertices, sizeof(triangleVertices));
-				m_vertexBuffer->Unmap(0, nullptr);
+				//// Copy the triangle data to the vertex buffer.
+				//UINT8* pVertexDataBegin;
+				//CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
+				//ThrowIfFailed(m_vertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
+				//memcpy(pVertexDataBegin, triangleVertices, sizeof(triangleVertices));
+				//m_vertexBuffer->Unmap(0, nullptr);
+
+				ComPtr<ID3D12Resource> uploadBuffer = nullptr;
+				m_vertexBuffer = CreateDefaultBuffer(m_pDevice.Get(), m_pCommandList.Get(), &triangleVertices, sizeof(Vertex) * 3, uploadBuffer);
 
 				// Initialize the vertex buffer view.
 				m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
@@ -422,7 +481,7 @@ namespace LS
 			}
 		}
 
-		void CheckFeatures(std::string& s)
+		void CheckFeatures([[maybe_unused]] std::string& s)
 		{
 			std::cout << "Checking features ... \n";
 		}
