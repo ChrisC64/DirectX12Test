@@ -28,6 +28,12 @@ namespace LS
 		Vector<float, 3> position;
 		Vector<float, 4> color;
 	};
+	
+	export struct VertexPT
+	{
+		Vector<float, 4> position;
+		Vector<float, 2> uv;
+	};
 
 	export class LSDevice
 	{
