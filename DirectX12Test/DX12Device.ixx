@@ -1,9 +1,9 @@
 module;
-#include <string>
-#include <memory>
-#include <array>
 
 export module DX12Device;
+import <string>;
+import <memory>;
+import <array>;
 
 namespace LS
 {

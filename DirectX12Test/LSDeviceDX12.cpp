@@ -513,6 +513,8 @@ namespace LS
 			{
 				ComPtr<ID3DBlob> vertexShader;
 				ComPtr<ID3DBlob> pixelShader;
+				ComPtr<ID3DBlob> vertexShader2;
+				ComPtr<ID3DBlob> pixelShader2;
 
 #if defined(_DEBUG)
 				// Enable better shader debugging with the graphics debugging tools.
@@ -549,20 +551,19 @@ namespace LS
 				psoDesc.SampleDesc.Count = 1;
 				ThrowIfFailed(m_pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pPipelineState)));
 
-
 				// Create root signature for texture_effect.hlsl
-				ThrowIfFailed(D3DCompileFromFile(L"texture_effect.hlsl", nullptr, nullptr, "VSMain", "vs_5_0", compileFlags, 0, &vertexShader, nullptr));
-				ThrowIfFailed(D3DCompileFromFile(L"texture_effect.hlsl", nullptr, nullptr, "PSMain", "ps_5_0", compileFlags, 0, &pixelShader, nullptr));
+				ThrowIfFailed(D3DCompileFromFile(L"texture_effect.hlsl", nullptr, nullptr, "VSMain", "vs_5_0", compileFlags, 0, &vertexShader2, nullptr));
+				ThrowIfFailed(D3DCompileFromFile(L"texture_effect.hlsl", nullptr, nullptr, "PSMain", "ps_5_0", compileFlags, 0, &pixelShader2, nullptr));
 				D3D12_INPUT_ELEMENT_DESC inputElementDescs2[] =
 				{
 					{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 					{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 				};
-				
+
 				psoDesc.InputLayout = { inputElementDescs2, _countof(inputElementDescs2) };
 				psoDesc.pRootSignature = m_pRootSignature2.Get();
-				psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertexShader.Get());
-				psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixelShader.Get());
+				psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertexShader2.Get());
+				psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixelShader2.Get());
 				ThrowIfFailed(m_pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pPipelineStatePT)));
 			}
 
@@ -650,7 +651,6 @@ namespace LS
 				m_vertexBufferViewPT.BufferLocation = m_vertexBufferPT->GetGPUVirtualAddress();
 				m_vertexBufferViewPT.StrideInBytes = sizeof(VertexPT);
 				m_vertexBufferViewPT.SizeInBytes = vertexBufferSize2;
-
 			}
 		}
 
@@ -844,82 +844,56 @@ namespace LS
 
 		void Render(const ColorRGBA& clearColor)
 		{
-			// Populate the command list
-			// This means record all commands we need to render the scene (clearing for now)
-			//PopulateCommandList(clearColor);
+			// Reset command allocator to claim memory used by it
+			// Then reset the command list to its default state
+			// Perform commands for the new state (just clear screen in this example)
+			// Uses a resource barrier to manage transition of resource (Render Target) from one state to another
+			// Close command list to execute the command
 
-			/*SetPipelineState(m_pPipelineState);
-			SetRootSignature(m_pRootSignature);
+			auto frameCon = BeginRender();
+			// Basic setup for drawing - Reset command list, set viewport to draw to, and clear the frame buffer
+			ResetCommandList(frameCon, m_pPipelineState);
+			SetViewport();
 			ClearRTV(clearColor);
+			// Draws the gradient triangle
+			SetPipelineState(m_pPipelineState);
+			SetRootSignature(m_pRootSignature);
 			Draw(m_vertexBufferView, 3);
-			PresentRTV();
-			ExecuteCommandList();
-			ThrowIfFailed(m_pSwapChain->Present(1, 0));
-
-			MoveToNextFrame();*/
-
+			// set the state of the pipeline for the textured triangle
 			SetPipelineState(m_pPipelineStatePT);
 			SetRootSignature(m_pRootSignature2);
-			ClearRTV(clearColor);
-			//SetRTV();
-			Draw(m_vertexBufferViewPT, 3);
 			SetDescriptorHeaps();
+			Draw(m_vertexBufferViewPT, 3);
+			// Prepare to render to the render target
 			PresentRTV();
+			CloseCommandList();
+			// Throw command list onto the command queue and prepare to send it off
 			ExecuteCommandList();
-			// Present the frame from the swapchain
 			ThrowIfFailed(m_pSwapChain->Present(1, 0));
-			// Wait for GPU work to finish before proceeding
+			// Wait for next frame
 			MoveToNextFrame();
 		}
 
-		// Reset command allocator to claim memory used by it
-		// Then reset the command list to its default state
-		// Perform commands for the new state (just clear screen in this example)
-		// Uses a resource barrier to manage transition of resource (Render Target) from one state to another
-		// Close command list to execute the command
-		void PopulateCommandList(const ColorRGBA& clearColor)
-		{
-			//FrameContext* frameCon = &m_frameContext[FrameIndex()];
-			// Reclaims the memory allocated by this allocator for our next usage
-			//ThrowIfFailed(frameCon->CommandAllocator->Reset());
 
-			// Resets a command list to its initial state 
-			//ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator.Get(), m_pPipelineState.Get()));
 
-			// Set necessary state.
-			//m_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());
-			/*m_pCommandList->RSSetViewports(1, &m_viewport);
-			m_pCommandList->RSSetScissorRects(1, &m_scissorRect);*/
-
-			// This will prep the back buffer as our render target and prepare it for transition
-			/*auto backbufferIndex = m_pSwapChain->GetCurrentBackBufferIndex();
-			auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_mainRenderTargetResource[backbufferIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-			m_pCommandList->ResourceBarrier(1, &barrier);*/
-
-			//CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRtvDescHeap->GetCPUDescriptorHandleForHeapStart(), m_frameIndex, m_rtvDescriptorSize);
-			//m_pCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
-			//// Similar to D3D11 - this is our command for drawing. For now, testing triangle drawing through MSDN example code
-			//const float color[] = { clearColor.r, clearColor.g, clearColor.b, clearColor.a };
-			//m_pCommandList->ClearRenderTargetView(rtvHandle, color, 0, nullptr);
-			/*m_pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			m_pCommandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
-			m_pCommandList->DrawInstanced(3, 1, 0, 0);*/
-
-			// Indicate that the back buffer will now be used to present.
-			/*auto barrier2 = CD3DX12_RESOURCE_BARRIER::Transition(m_mainRenderTargetResource[backbufferIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-			m_pCommandList->ResourceBarrier(1, &barrier2);*/
-
-			//ThrowIfFailed(m_pCommandList->Close());
-		}
-
-		void SetPipelineState(ComPtr<ID3D12PipelineState>& pipelineState)
+		FrameContext* BeginRender()
 		{
 			FrameContext* frameCon = &m_frameContext[FrameIndex()];
 			// Reclaims the memory allocated by this allocator for our next usage
 			ThrowIfFailed(frameCon->CommandAllocator->Reset());
+			return frameCon;
+		}
 
+		void ResetCommandList(FrameContext* frameCon, ComPtr<ID3D12PipelineState>& pipelineState)
+		{
 			// Resets a command list to its initial state 
-			ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator.Get(), pipelineState.Get()));
+			//ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator.Get(), pipelineState.Get()));
+			ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator.Get(), nullptr));
+		}
+
+		void SetPipelineState(ComPtr<ID3D12PipelineState>& pipelineState)
+		{
+			m_pCommandList->SetPipelineState(pipelineState.Get());
 		}
 
 		void SetRootSignature(ComPtr<ID3D12RootSignature>& rootSignature)
@@ -933,13 +907,16 @@ namespace LS
 			m_pCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
 			m_pCommandList->SetGraphicsRootDescriptorTable(0, m_pSrvDescHeap->GetGPUDescriptorHandleForHeapStart());
 		}
-		
-		void ClearRTV(const ColorRGBA& clearColor)
+
+		void SetViewport()
 		{
 			// Set Viewport
 			m_pCommandList->RSSetViewports(1, &m_viewport);
 			m_pCommandList->RSSetScissorRects(1, &m_scissorRect);
+		}
 
+		void ClearRTV(const ColorRGBA& clearColor)
+		{
 			// This will prep the back buffer as our render target and prepare it for transition
 			auto backbufferIndex = m_pSwapChain->GetCurrentBackBufferIndex();
 			auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_mainRenderTargetResource[backbufferIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -978,7 +955,10 @@ namespace LS
 			// Indicate that the back buffer will now be used to present.
 			auto barrier2 = CD3DX12_RESOURCE_BARRIER::Transition(m_mainRenderTargetResource[backbufferIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
 			m_pCommandList->ResourceBarrier(1, &barrier2);
+		}
 
+		void CloseCommandList()
+		{
 			m_pCommandList->Close();
 		}
 
