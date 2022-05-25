@@ -88,7 +88,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <EnableModules>true</EnableModules>
       <AdditionalIncludeDirectories>$(SolutionDir)Vendor;$(SolutionDir)Vendor\DirectX-Headers\include\directx;$(SolutionDir)Vendor\DirectX-Headers\include\dxguids;$(SolutionDir)Vendor\DirectX-Headers\include\wsl;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -106,7 +106,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <EnableModules>true</EnableModules>
       <AdditionalIncludeDirectories>$(SolutionDir)Vendor;$(SolutionDir)Vendor\DirectX-Headers\include\directx;$(SolutionDir)Vendor\DirectX-Headers\include\dxguids;$(SolutionDir)Vendor\DirectX-Headers\include\wsl;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -124,7 +124,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <EnableModules>true</EnableModules>
       <AdditionalIncludeDirectories>$(SolutionDir)Vendor;$(SolutionDir)Vendor\DirectX-Headers\include\directx;$(SolutionDir)Vendor\DirectX-Headers\include\dxguids;$(SolutionDir)Vendor\DirectX-Headers\include\wsl;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -145,7 +145,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <EnableModules>true</EnableModules>
       <AdditionalIncludeDirectories>$(SolutionDir)Vendor;$(SolutionDir)Vendor\DirectX-Headers\include\directx;$(SolutionDir)Vendor\DirectX-Headers\include\dxguids;$(SolutionDir)Vendor\DirectX-Headers\include\wsl;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>

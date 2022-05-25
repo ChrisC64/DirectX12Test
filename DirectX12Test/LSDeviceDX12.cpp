@@ -270,8 +270,16 @@ namespace LS
 
 	struct FrameContext
 	{
-		ComPtr<ID3D12CommandAllocator> CommandAllocator;// Manages application memory onto the GPU (executed by command lists)
-		UINT64                         FenceValue;
+		ComPtr<ID3D12CommandAllocator> CommandAllocator;// Manages a heap for the command lists. This cannot be reset while the CommandList is still in flight on the GPU
+		ComPtr<ID3D12CommandAllocator> BundleAllocator;// Use with the bundle list, this allocator performs the same operations as a command list, but is associated with the bundle
+		ComPtr<ID3D12GraphicsCommandList> BundleList;// Bundle up calls you would want repeated constantly, like setting up a draw for a vertex buffer. 
+		UINT64                         FenceValue;// Singal value between the GPU and CPU to perform synchronization. 
+	};
+
+	struct FrameResource
+	{
+		ComPtr<ID3D12CommandAllocator> CommandAllocator;
+		ComPtr<ID3D12CommandList>      CommandList;
 	};
 
 	class LSDeviceDX12
@@ -289,6 +297,8 @@ namespace LS
 		ComPtr<ID3D12CommandQueue>								m_pCommandQueue;
 		ComPtr<IDXGISwapChain4>									m_pSwapChain = nullptr;
 		ComPtr<ID3D12GraphicsCommandList>						m_pCommandList; // Records drawing or state chaning calls for execution later by the GPU - Set states, draw calls - think the D3D11::ImmediateContext 
+		ComPtr<ID3D12CommandAllocator>							m_pBundleAllocator;
+		ComPtr<ID3D12GraphicsCommandList>						m_pBundleList;
 		ComPtr<ID3D12RootSignature>								m_pRootSignature; // Used with shaders to determine input and variables
 		ComPtr<ID3D12RootSignature>								m_pRootSignature2; // Used with shaders to determine input and variables - texture_effect.hlsl
 		ComPtr<ID3D12PipelineState>								m_pPipelineState; // Defines our pipeline's state - primitive topology, render targets, shaders, etc. 
@@ -550,6 +560,11 @@ namespace LS
 				psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 				psoDesc.SampleDesc.Count = 1;
 				ThrowIfFailed(m_pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pPipelineState)));
+				// Bundle Test // 
+				{
+					ThrowIfFailed(m_pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_BUNDLE, IID_PPV_ARGS(&m_pBundleAllocator)));
+					ThrowIfFailed(m_pDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_BUNDLE, m_pBundleAllocator.Get(), m_pPipelineState.Get(), IID_PPV_ARGS(&m_pBundleList)));
+				}
 
 				// Create root signature for texture_effect.hlsl
 				ThrowIfFailed(D3DCompileFromFile(L"texture_effect.hlsl", nullptr, nullptr, "VSMain", "vs_5_0", compileFlags, 0, &vertexShader2, nullptr));
@@ -651,6 +666,15 @@ namespace LS
 				m_vertexBufferViewPT.BufferLocation = m_vertexBufferPT->GetGPUVirtualAddress();
 				m_vertexBufferViewPT.StrideInBytes = sizeof(VertexPT);
 				m_vertexBufferViewPT.SizeInBytes = vertexBufferSize2;
+				// Bundle Test - The vertex buffer isn't iniitialized until here, and we are still in recording state from LoadAssets() call
+				// So now we can just fulfill our commands and close it. 
+				{
+					m_pBundleList->SetGraphicsRootSignature(m_pRootSignature.Get());
+					m_pBundleList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+					m_pBundleList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
+					m_pBundleList->DrawInstanced(3, 1, 0, 0);
+					ThrowIfFailed(m_pBundleList->Close());
+				}
 			}
 		}
 
@@ -857,8 +881,9 @@ namespace LS
 			ClearRTV(clearColor);
 			// Draws the gradient triangle
 			SetPipelineState(m_pPipelineState);
-			SetRootSignature(m_pRootSignature);
-			Draw(m_vertexBufferView, 3);
+			m_pCommandList->ExecuteBundle(m_pBundleList.Get());
+			/*SetRootSignature(m_pRootSignature);
+			Draw(m_vertexBufferView, 3);*/
 			// set the state of the pipeline for the textured triangle
 			SetPipelineState(m_pPipelineStatePT);
 			SetRootSignature(m_pRootSignature2);
