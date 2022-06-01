@@ -1,4 +1,5 @@
 import DX12Device;
+import Constants;
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <iostream>
@@ -267,25 +268,24 @@ void CreateTileSampleTexture(
 namespace LS
 {
 	using namespace Microsoft::WRL;
+	const constinit uint32_t							FRAME_COUNT = 3;
+	template <class T, uint32_t Size>
+	using ComPtrArray = std::array<ComPtr<T>, Size>;
 
 	struct FrameContext
 	{
-		ComPtr<ID3D12CommandAllocator> CommandAllocator;// Manages a heap for the command lists. This cannot be reset while the CommandList is still in flight on the GPU
+		ComPtrArray<ID3D12CommandAllocator, Engine::NUM_CONTEXT> CommandAllocator;// Manages a heap for the command lists. This cannot be reset while the CommandList is still in flight on the GPU0
+		//ComPtr<ID3D12CommandAllocator> CommandAllocator;// Manages a heap for the command lists. This cannot be reset while the CommandList is still in flight on the GPU0
 		ComPtr<ID3D12CommandAllocator> BundleAllocator;// Use with the bundle list, this allocator performs the same operations as a command list, but is associated with the bundle
+		ComPtrArray<ID3D12GraphicsCommandList, Engine::NUM_CONTEXT> CommandList;// Sends commands to the GPU - represents this frames commands
+		//ComPtr<ID3D12GraphicsCommandList> CommandList;// Sends commands to the GPU - represents this frames commands
 		ComPtr<ID3D12GraphicsCommandList> BundleList;// Bundle up calls you would want repeated constantly, like setting up a draw for a vertex buffer. 
 		UINT64                         FenceValue;// Singal value between the GPU and CPU to perform synchronization. 
-	};
-
-	struct FrameResource
-	{
-		ComPtr<ID3D12CommandAllocator> CommandAllocator;
-		ComPtr<ID3D12CommandList>      CommandList;
 	};
 
 	class LSDeviceDX12
 	{
 	private:
-		static constexpr uint32_t								FRAME_COUNT = 3;
 		std::array<FrameContext, FRAME_COUNT>					m_frameContext = {};
 		uint32_t												m_frameIndex;
 		float													m_aspectRatio;
@@ -294,6 +294,8 @@ namespace LS
 		ComPtr<ID3D12Device4>									m_pDevice;
 		ComPtr<ID3D12DescriptorHeap>							m_pRtvDescHeap;
 		ComPtr<ID3D12DescriptorHeap>							m_pSrvDescHeap;
+		ComPtr<ID3D12CommandAllocator>							m_pCommandAllocator; // local command allocator for non-frame resource related jobs.
+		ComPtr<ID3D12CommandAllocator>							m_pCommandAllocator2; // local command allocator for non-frame resource related jobs.
 		ComPtr<ID3D12CommandQueue>								m_pCommandQueue;
 		ComPtr<IDXGISwapChain4>									m_pSwapChain = nullptr;
 		ComPtr<ID3D12GraphicsCommandList>						m_pCommandList; // Records drawing or state chaning calls for execution later by the GPU - Set states, draw calls - think the D3D11::ImmediateContext 
@@ -505,19 +507,24 @@ namespace LS
 				ThrowIfFailed(D3DX12SerializeVersionedRootSignature(&rootSignatureDesc, featureData.HighestVersion, &signature, &error));
 				ThrowIfFailed(m_pDevice->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_pRootSignature2)));
 			}
-
 			// Create pipeline states and associate to command allocators since we have an array of them
-			for (auto fc : m_frameContext)
+			for (auto& fc : m_frameContext)
 			{
-				ThrowIfFailed(m_pDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, fc.CommandAllocator.Get(), m_pPipelineState.Get(), IID_PPV_ARGS(&m_pCommandList)));
+				for (auto i = 0u; i < Engine::NUM_CONTEXT; ++i)
+				{
+					ThrowIfFailed(m_pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&fc.CommandAllocator[i])));
+					ThrowIfFailed(m_pDevice->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&fc.CommandList[i])));
+					fc.CommandAllocator[i]->SetName(L"FC Command Allocator " + i);
+					fc.CommandList[i]->SetName(L"FC Command List " + i);
+				}
 			}
-
-			for (int i = 0; i < m_frameContext.size(); i++)
+			
+			/*for (int i = 0; i < m_frameContext.size(); i++)
 			{
 				m_frameContext[i].CommandAllocator->SetName(L"Command Allocator" + i);
-			}
+			}*/
 
-			m_pCommandList->SetName(L"Command List");
+			//m_pCommandList->SetName(L"Command List");
 
 			// Create the pipeline state, which includes compiling and loading shaders.
 			{
@@ -589,7 +596,7 @@ namespace LS
 					return false;
 
 				// Update the fence value, from startup, this should be 0, and thus the next frame we'll be creating will be the first frame (back buffer, as 0 is currently in front)
-				m_frameContext[FrameIndex()].FenceValue++;
+				m_frameContext[m_frameIndex].FenceValue++;
 
 				m_fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 				if (m_fenceEvent == nullptr)
@@ -601,14 +608,91 @@ namespace LS
 			return true;
 		}
 
+		//void LoadVertexDataToGpu()
+		//{
+		//	FrameContext* frameCon = &m_frameContext[FrameIndex()];
+		//	// Reclaims the memory allocated by this allocator for our next usage
+		//	ThrowIfFailed(frameCon->CommandAllocator->Reset());
+
+		//	// Resets a command list to its initial state 
+		//	ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator.Get(), m_pPipelineState.Get()));
+
+		//	// Create the vertex buffer.
+		//	{
+		//		// Define the geometry for a triangle.
+		//		Vertex triangleVertices[] =
+		//		{
+		//			{ { -1.0f, 1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
+		//			{ { 1.0f, 1.0f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
+		//			{ { -1.0f, -1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } }
+		//		};
+		//		const UINT vertexBufferSize = sizeof(triangleVertices);
+
+		//		// We create a default and upload buffer. Using the upload buffer, we transfer the data from the CPU to the GPU (hence the name) but we do not use the buffer as reference.
+		//		// We copy the data from our upload buffer to the default buffer, and the only differenc between the two is the staging - Upload vs Default.
+		//		// Default types are best for static data that isn't changing.
+		//		ComPtr<ID3D12Resource> uploadBuffer;
+		//		m_vertexBuffer = CreateDefaultBuffer(m_pDevice.Get(), m_pCommandList.Get(), triangleVertices, sizeof(Vertex) * 3, uploadBuffer, D3D12_RESOURCE_STATE_GENERIC_READ, L"default vb");
+
+		//		// We must wait and insure the data has been copied before moving on 
+		//		// After we execute the command list, we need to sync with the GPU and wait to create our buffer view
+		//		m_pCommandList->Close();
+		//		ExecuteCommandList();
+		//		WaitForGpu();
+
+		//		// Initialize the vertex buffer view.
+		//		m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
+		//		m_vertexBufferView.StrideInBytes = sizeof(Vertex);
+		//		m_vertexBufferView.SizeInBytes = vertexBufferSize;
+
+		//		ThrowIfFailed(frameCon->CommandAllocator->Reset());
+
+		//		// Resets a command list to its initial state 
+		//		ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator.Get(), m_pPipelineStatePT.Get()));
+
+		//		// Textured Triangle
+		//		VertexPT triangleVerticesPT[] =
+		//		{
+		//			{ { 0.0f, 0.25f * m_aspectRatio, 0.0f }, { 0.5f, 0.0f } },
+		//			{ { 0.25f, -0.25f * m_aspectRatio, 0.0f }, { 1.0f, 1.0f } },
+		//			{ { -0.25f, -0.25f * m_aspectRatio, 0.0f }, { 0.0f, 1.0f } }
+		//		};
+		//		const UINT vertexBufferSize2 = sizeof(triangleVerticesPT);
+
+		//		ComPtr<ID3D12Resource> textureUploadBuffer;
+		//		m_vertexBufferPT = CreateDefaultBuffer(m_pDevice.Get(), m_pCommandList.Get(), triangleVerticesPT, sizeof(VertexPT) * 3, textureUploadBuffer, D3D12_RESOURCE_STATE_GENERIC_READ, L"pt default vb");
+		//		ComPtr<ID3D12Resource> textureUploadHeap;
+		//		{
+		//			CreateTileSampleTexture(m_pDevice.Get(), m_texture, 256u, 256u, 4u, textureUploadHeap, m_pCommandList, m_pSrvDescHeap);
+		//		}
+		//		m_pCommandList->Close();
+		//		ExecuteCommandList();
+		//		WaitForGpu();
+
+		//		// Initialize the vertex buffer view.
+		//		m_vertexBufferViewPT.BufferLocation = m_vertexBufferPT->GetGPUVirtualAddress();
+		//		m_vertexBufferViewPT.StrideInBytes = sizeof(VertexPT);
+		//		m_vertexBufferViewPT.SizeInBytes = vertexBufferSize2;
+		//		// Bundle Test - The vertex buffer isn't iniitialized until here, and we are still in recording state from LoadAssets() call
+		//		// So now we can just fulfill our commands and close it. 
+		//		{
+		//			m_pBundleList->SetGraphicsRootSignature(m_pRootSignature.Get());
+		//			m_pBundleList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		//			m_pBundleList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
+		//			m_pBundleList->DrawInstanced(3, 1, 0, 0);
+		//			ThrowIfFailed(m_pBundleList->Close());
+		//		}
+		//	}
+		//}
+
+		// Loads Data to GPU using temporary command list. 
 		void LoadVertexDataToGpu()
 		{
-			FrameContext* frameCon = &m_frameContext[FrameIndex()];
-			// Reclaims the memory allocated by this allocator for our next usage
-			ThrowIfFailed(frameCon->CommandAllocator->Reset());
-
-			// Resets a command list to its initial state 
-			ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator.Get(), m_pPipelineState.Get()));
+			ComPtr<ID3D12GraphicsCommandList> commandList;
+			ThrowIfFailed(m_pDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_pCommandAllocator.Get(), m_pPipelineState.Get(), IID_PPV_ARGS(&commandList)));
+			
+			ComPtr<ID3D12GraphicsCommandList> commandList2;
+			ThrowIfFailed(m_pDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_pCommandAllocator2.Get(), m_pPipelineStatePT.Get(), IID_PPV_ARGS(&commandList2)));
 
 			// Create the vertex buffer.
 			{
@@ -625,23 +709,24 @@ namespace LS
 				// We copy the data from our upload buffer to the default buffer, and the only differenc between the two is the staging - Upload vs Default.
 				// Default types are best for static data that isn't changing.
 				ComPtr<ID3D12Resource> uploadBuffer;
-				m_vertexBuffer = CreateDefaultBuffer(m_pDevice.Get(), m_pCommandList.Get(), triangleVertices, sizeof(Vertex) * 3, uploadBuffer, D3D12_RESOURCE_STATE_GENERIC_READ, L"default vb");
+				//m_vertexBuffer = CreateDefaultBuffer(m_pDevice.Get(), commandList.Get(), triangleVertices, sizeof(Vertex) * 3, uploadBuffer, D3D12_RESOURCE_STATE_GENERIC_READ, L"default vb");
+				m_vertexBuffer = CreateDefaultBuffer(m_pDevice.Get(), commandList.Get(), triangleVertices, sizeof(Vertex) * 3, uploadBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, L"default vb");
 
 				// We must wait and insure the data has been copied before moving on 
 				// After we execute the command list, we need to sync with the GPU and wait to create our buffer view
-				m_pCommandList->Close();
-				ExecuteCommandList();
-				WaitForGpu();
+				ThrowIfFailed(commandList->Close());
+				
+				//WaitForGpu();
 
 				// Initialize the vertex buffer view.
 				m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
 				m_vertexBufferView.StrideInBytes = sizeof(Vertex);
 				m_vertexBufferView.SizeInBytes = vertexBufferSize;
 
-				ThrowIfFailed(frameCon->CommandAllocator->Reset());
+				//ThrowIfFailed(m_pCommandAllocator->Reset());
 
-				// Resets a command list to its initial state 
-				ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator.Get(), m_pPipelineStatePT.Get()));
+				//// Resets a command list to its initial state 
+				//ThrowIfFailed(commandList->Reset(m_pCommandAllocator.Get(), m_pPipelineStatePT.Get()));
 
 				// Textured Triangle
 				VertexPT triangleVerticesPT[] =
@@ -653,14 +738,16 @@ namespace LS
 				const UINT vertexBufferSize2 = sizeof(triangleVerticesPT);
 
 				ComPtr<ID3D12Resource> textureUploadBuffer;
-				m_vertexBufferPT = CreateDefaultBuffer(m_pDevice.Get(), m_pCommandList.Get(), triangleVerticesPT, sizeof(VertexPT) * 3, textureUploadBuffer, D3D12_RESOURCE_STATE_GENERIC_READ, L"pt default vb");
+				m_vertexBufferPT = CreateDefaultBuffer(m_pDevice.Get(), commandList2.Get(), triangleVerticesPT, sizeof(VertexPT) * 3, textureUploadBuffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, L"pt default vb");
 				ComPtr<ID3D12Resource> textureUploadHeap;
 				{
-					CreateTileSampleTexture(m_pDevice.Get(), m_texture, 256u, 256u, 4u, textureUploadHeap, m_pCommandList, m_pSrvDescHeap);
+					CreateTileSampleTexture(m_pDevice.Get(), m_texture, 256u, 256u, 4u, textureUploadHeap, commandList2, m_pSrvDescHeap);
 				}
-				m_pCommandList->Close();
-				ExecuteCommandList();
-				WaitForGpu();
+				commandList2->Close();
+				ID3D12CommandList* ppCommandList[] = { commandList.Get(), commandList2.Get()};
+				m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandList), ppCommandList);
+				//ExecuteCommandList();
+				//WaitForGpu();
 
 				// Initialize the vertex buffer view.
 				m_vertexBufferViewPT.BufferLocation = m_vertexBufferPT->GetGPUVirtualAddress();
@@ -675,18 +762,38 @@ namespace LS
 					m_pBundleList->DrawInstanced(3, 1, 0, 0);
 					ThrowIfFailed(m_pBundleList->Close());
 				}
+				// Wait for GPU work to finish
+				{
+					ThrowIfFailed(m_pDevice->CreateFence(m_fenceLastSignaledValue, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)));
+					++m_fenceLastSignaledValue;
+
+					m_fenceEvent = CreateEvent(nullptr, false, false, nullptr);
+
+					if (m_fenceEvent == nullptr)
+					{
+						ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
+					}
+
+					const auto waitForValue = m_fenceLastSignaledValue;
+					ThrowIfFailed(m_pCommandQueue->Signal(m_fence.Get(), waitForValue));
+					++m_fenceLastSignaledValue;
+
+					ThrowIfFailed(m_fence->SetEventOnCompletion(waitForValue, m_fenceEvent));
+					WaitForSingleObjectEx(m_fenceEvent, INFINITE, FALSE);
+
+				}
 			}
 		}
 
-		constexpr UINT FrameIndex()
+		/*constexpr UINT FrameIndex()
 		{
 			return m_frameIndex == 0 ? 0 : m_frameIndex % FRAME_COUNT;
-		}
+		}*/
 
 		// Waits for work on the GPU to finish before moving on to the next frame
 		void WaitForGpu()
 		{
-			FrameContext* frameCon = &m_frameContext[FrameIndex()];
+			FrameContext* frameCon = &m_frameContext[m_frameIndex];
 
 			// Signals the GPU the next upcoming fence value
 			ThrowIfFailed(m_pCommandQueue->Signal(m_fence.Get(), frameCon->FenceValue));
@@ -773,8 +880,11 @@ namespace LS
 				m_pDevice->CreateRenderTargetView(m_mainRenderTargetResource[i].Get(), nullptr, rtvHandle);
 				rtvHandle.Offset(1, m_rtvDescriptorSize);
 				m_mainRenderTargetDescriptor[i] = rtvHandle;
-				ThrowIfFailed(m_pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_frameContext[i].CommandAllocator)));
 			}
+			ThrowIfFailed(m_pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_pCommandAllocator)));
+			m_pCommandAllocator->SetName(L"Data Command Allocator");
+			ThrowIfFailed(m_pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_pCommandAllocator2)));
+			m_pCommandAllocator2->SetName(L"Data Command Allocator 2");
 		}
 
 		void CheckFeatures([[maybe_unused]] std::string& s)
@@ -893,7 +1003,7 @@ namespace LS
 			PresentRTV();
 			CloseCommandList();
 			// Throw command list onto the command queue and prepare to send it off
-			ExecuteCommandList();
+			//ExecuteCommandList();
 			ThrowIfFailed(m_pSwapChain->Present(1, 0));
 			// Wait for next frame
 			MoveToNextFrame();
@@ -903,9 +1013,9 @@ namespace LS
 
 		FrameContext* BeginRender()
 		{
-			FrameContext* frameCon = &m_frameContext[FrameIndex()];
+			FrameContext* frameCon = &m_frameContext[m_frameIndex];
 			// Reclaims the memory allocated by this allocator for our next usage
-			ThrowIfFailed(frameCon->CommandAllocator->Reset());
+			ThrowIfFailed(frameCon->CommandAllocator[m_frameIndex]->Reset());
 			return frameCon;
 		}
 
@@ -913,7 +1023,7 @@ namespace LS
 		{
 			// Resets a command list to its initial state 
 			//ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator.Get(), pipelineState.Get()));
-			ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator.Get(), nullptr));
+			ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator[m_frameIndex].Get(), nullptr));
 		}
 
 		void SetPipelineState(ComPtr<ID3D12PipelineState>& pipelineState)
@@ -994,7 +1104,8 @@ namespace LS
 			ThrowIfFailed(m_pCommandQueue->Signal(m_fence.Get(), frameCon->FenceValue));
 
 			// Update frame index
-			m_frameIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+			//m_frameIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+			m_frameIndex = (m_frameIndex + 1) % Engine::FRAME_COUNT;
 
 			if (m_fence->GetCompletedValue() < frameCon->FenceValue)
 			{

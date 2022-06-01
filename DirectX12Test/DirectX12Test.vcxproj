@@ -159,6 +159,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Application.ixx" />
+    <ClCompile Include="Constants.ixx" />
     <ClCompile Include="DirectX12Test.cpp" />
     <ClCompile Include="DX12Device.ixx" />
     <ClCompile Include="LSDeviceDX12.cpp" />
