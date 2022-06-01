@@ -298,7 +298,7 @@ namespace LS
 		ComPtr<ID3D12CommandAllocator>							m_pCommandAllocator2; // local command allocator for non-frame resource related jobs.
 		ComPtr<ID3D12CommandQueue>								m_pCommandQueue;
 		ComPtr<IDXGISwapChain4>									m_pSwapChain = nullptr;
-		ComPtr<ID3D12GraphicsCommandList>						m_pCommandList; // Records drawing or state chaning calls for execution later by the GPU - Set states, draw calls - think the D3D11::ImmediateContext 
+		//ComPtr<ID3D12GraphicsCommandList>						m_pCommandList; // Records drawing or state chaning calls for execution later by the GPU - Set states, draw calls - think the D3D11::ImmediateContext 
 		ComPtr<ID3D12CommandAllocator>							m_pBundleAllocator;
 		ComPtr<ID3D12GraphicsCommandList>						m_pBundleList;
 		ComPtr<ID3D12RootSignature>								m_pRootSignature; // Used with shaders to determine input and variables
@@ -589,7 +589,7 @@ namespace LS
 				ThrowIfFailed(m_pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pPipelineStatePT)));
 			}
 
-			ThrowIfFailed(m_pDevice->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&m_pCommandList)));
+			/*ThrowIfFailed(m_pDevice->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&m_pCommandList)));*/
 			{
 				// A fence is used for synchronization
 				if (m_pDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)) != S_OK)
@@ -790,21 +790,6 @@ namespace LS
 			return m_frameIndex == 0 ? 0 : m_frameIndex % FRAME_COUNT;
 		}*/
 
-		// Waits for work on the GPU to finish before moving on to the next frame
-		void WaitForGpu()
-		{
-			FrameContext* frameCon = &m_frameContext[m_frameIndex];
-
-			// Signals the GPU the next upcoming fence value
-			ThrowIfFailed(m_pCommandQueue->Signal(m_fence.Get(), frameCon->FenceValue));
-
-			// Wait for the fence to be processes
-			ThrowIfFailed(m_fence->SetEventOnCompletion(frameCon->FenceValue, m_fenceEvent));
-			WaitForSingleObjectEx(m_fenceEvent, INFINITE, FALSE);
-			// Increment value to the next frame
-			frameCon->FenceValue++;
-		}
-
 		void GetHardwareAdapter(
 			IDXGIFactory1* pFactory,
 			IDXGIAdapter1** ppAdapter,
@@ -969,11 +954,28 @@ namespace LS
 			}
 		}
 
-		void ExecuteCommandList()
+		void ExecuteCommandList(FrameContext* frameCon)
 		{
 			// Execut the command list
-			ID3D12CommandList* ppCommandLists[] = { m_pCommandList.Get() };
+			/*ID3D12CommandList* ppCommandLists[] = { m_pCommandList.Get() };
+			m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);*/
+			ID3D12CommandList* ppCommandLists[] = { frameCon->CommandList[m_frameIndex].Get()};
 			m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+		}
+
+		// Waits for work on the GPU to finish before moving on to the next frame
+		void WaitForGpu()
+		{
+			FrameContext* frameCon = &m_frameContext[m_frameIndex];
+
+			// Signals the GPU the next upcoming fence value
+			ThrowIfFailed(m_pCommandQueue->Signal(m_fence.Get(), frameCon->FenceValue));
+
+			// Wait for the fence to be processes
+			ThrowIfFailed(m_fence->SetEventOnCompletion(frameCon->FenceValue, m_fenceEvent));
+			WaitForSingleObjectEx(m_fenceEvent, INFINITE, FALSE);
+			// Increment value to the next frame
+			frameCon->FenceValue++;
 		}
 
 		void Render(const ColorRGBA& clearColor)
@@ -987,23 +989,24 @@ namespace LS
 			auto frameCon = BeginRender();
 			// Basic setup for drawing - Reset command list, set viewport to draw to, and clear the frame buffer
 			ResetCommandList(frameCon, m_pPipelineState);
-			SetViewport();
-			ClearRTV(clearColor);
+			SetViewport(frameCon);
+			ClearRTV(clearColor, frameCon);
 			// Draws the gradient triangle
-			SetPipelineState(m_pPipelineState);
-			m_pCommandList->ExecuteBundle(m_pBundleList.Get());
+			SetPipelineState(m_pPipelineState, frameCon);
+			frameCon->CommandList[m_frameIndex]->ExecuteBundle(m_pBundleList.Get());
+
 			/*SetRootSignature(m_pRootSignature);
 			Draw(m_vertexBufferView, 3);*/
 			// set the state of the pipeline for the textured triangle
-			SetPipelineState(m_pPipelineStatePT);
-			SetRootSignature(m_pRootSignature2);
-			SetDescriptorHeaps();
-			Draw(m_vertexBufferViewPT, 3);
+			SetPipelineState(m_pPipelineStatePT, frameCon);
+			SetRootSignature(m_pRootSignature2, frameCon);
+			SetDescriptorHeaps(frameCon);
+			Draw(m_vertexBufferViewPT, 3, frameCon);
 			// Prepare to render to the render target
-			PresentRTV();
-			CloseCommandList();
+			PresentRTV(frameCon);
+			CloseCommandList(frameCon);
 			// Throw command list onto the command queue and prepare to send it off
-			//ExecuteCommandList();
+			ExecuteCommandList(frameCon);
 			ThrowIfFailed(m_pSwapChain->Present(1, 0));
 			// Wait for next frame
 			MoveToNextFrame();
@@ -1023,78 +1026,79 @@ namespace LS
 		{
 			// Resets a command list to its initial state 
 			//ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator.Get(), pipelineState.Get()));
-			ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator[m_frameIndex].Get(), nullptr));
+			//ThrowIfFailed(m_pCommandList->Reset(frameCon->CommandAllocator[m_frameIndex].Get(), nullptr));
+			ThrowIfFailed(frameCon->CommandList[m_frameIndex]->Reset(frameCon->CommandAllocator[m_frameIndex].Get(), nullptr));
 		}
 
-		void SetPipelineState(ComPtr<ID3D12PipelineState>& pipelineState)
+		void SetPipelineState(ComPtr<ID3D12PipelineState>& pipelineState, FrameContext* frameCon)
 		{
-			m_pCommandList->SetPipelineState(pipelineState.Get());
+			frameCon->CommandList[m_frameIndex]->SetPipelineState(pipelineState.Get());
 		}
 
-		void SetRootSignature(ComPtr<ID3D12RootSignature>& rootSignature)
+		void SetRootSignature(ComPtr<ID3D12RootSignature>& rootSignature, FrameContext* frameCon)
 		{
-			m_pCommandList->SetGraphicsRootSignature(rootSignature.Get());
+			frameCon->CommandList[m_frameIndex]->SetGraphicsRootSignature(rootSignature.Get());
 		}
 
-		void SetDescriptorHeaps()
+		void SetDescriptorHeaps(FrameContext* frameCon)
 		{
 			ID3D12DescriptorHeap* ppHeaps[] = { m_pSrvDescHeap.Get() };
-			m_pCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
-			m_pCommandList->SetGraphicsRootDescriptorTable(0, m_pSrvDescHeap->GetGPUDescriptorHandleForHeapStart());
+			frameCon->CommandList[m_frameIndex]->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+			frameCon->CommandList[m_frameIndex]->SetGraphicsRootDescriptorTable(0, m_pSrvDescHeap->GetGPUDescriptorHandleForHeapStart());
 		}
 
-		void SetViewport()
+		void SetViewport(FrameContext* frameCon)
 		{
 			// Set Viewport
-			m_pCommandList->RSSetViewports(1, &m_viewport);
-			m_pCommandList->RSSetScissorRects(1, &m_scissorRect);
+			frameCon->CommandList[m_frameIndex]->RSSetViewports(1, &m_viewport);
+			frameCon->CommandList[m_frameIndex]->RSSetScissorRects(1, &m_scissorRect);
 		}
 
-		void ClearRTV(const ColorRGBA& clearColor)
+		void ClearRTV(const ColorRGBA& clearColor, FrameContext* frameCon)
 		{
 			// This will prep the back buffer as our render target and prepare it for transition
 			auto backbufferIndex = m_pSwapChain->GetCurrentBackBufferIndex();
 			auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_mainRenderTargetResource[backbufferIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-			m_pCommandList->ResourceBarrier(1, &barrier);
+			frameCon->CommandList[m_frameIndex]->ResourceBarrier(1, &barrier);
 
 			CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRtvDescHeap->GetCPUDescriptorHandleForHeapStart(), m_frameIndex, m_rtvDescriptorSize);
-			m_pCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+			frameCon->CommandList[m_frameIndex]->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 			// Similar to D3D11 - this is our command for drawing. For now, testing triangle drawing through MSDN example code
 			const float color[] = { clearColor.r, clearColor.g, clearColor.b, clearColor.a };
-			m_pCommandList->ClearRenderTargetView(rtvHandle, color, 0, nullptr);
+			frameCon->CommandList[m_frameIndex]->ClearRenderTargetView(rtvHandle, color, 0, nullptr);
 
 		}
 
-		void SetRTV()
+		void SetRTV(FrameContext* frameCon)
 		{
 			// This will prep the back buffer as our render target and prepare it for transition
 			auto backbufferIndex = m_pSwapChain->GetCurrentBackBufferIndex();
 			auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_mainRenderTargetResource[backbufferIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-			m_pCommandList->ResourceBarrier(1, &barrier);
+			frameCon->CommandList[m_frameIndex]->ResourceBarrier(1, &barrier);
 
 			CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRtvDescHeap->GetCPUDescriptorHandleForHeapStart(), m_frameIndex, m_rtvDescriptorSize);
-			m_pCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+			frameCon->CommandList[m_frameIndex]->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 		}
 
-		void Draw(D3D12_VERTEX_BUFFER_VIEW& bufferView, uint64_t vertices, std::optional<uint64_t> instances = 1u)
+		void Draw(D3D12_VERTEX_BUFFER_VIEW& bufferView, uint64_t vertices, FrameContext* frameCon, std::optional<uint64_t> instances = 1u)
 		{
-			m_pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-			m_pCommandList->IASetVertexBuffers(0, 1, &bufferView);
-			m_pCommandList->DrawInstanced(vertices, instances.value(), 0, 0);
+			frameCon->CommandList[m_frameIndex]->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+			frameCon->CommandList[m_frameIndex]->IASetVertexBuffers(0, 1, &bufferView);
+			frameCon->CommandList[m_frameIndex]->DrawInstanced(vertices, instances.value(), 0, 0);
 		}
 
-		void PresentRTV()
+		void PresentRTV(FrameContext* frameCon)
 		{
 			auto backbufferIndex = m_pSwapChain->GetCurrentBackBufferIndex();
 
 			// Indicate that the back buffer will now be used to present.
 			auto barrier2 = CD3DX12_RESOURCE_BARRIER::Transition(m_mainRenderTargetResource[backbufferIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
-			m_pCommandList->ResourceBarrier(1, &barrier2);
+			frameCon->CommandList[m_frameIndex]->ResourceBarrier(1, &barrier2);
 		}
 
-		void CloseCommandList()
+		void CloseCommandList(FrameContext* frameCon)
 		{
-			m_pCommandList->Close();
+			frameCon->CommandList[m_frameIndex]->Close();
 		}
 
 		void MoveToNextFrame()
